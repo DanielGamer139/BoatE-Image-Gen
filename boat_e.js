@@ -3,8 +3,11 @@
 
     class BoatE {
         constructor() {
-            // Your Cloudflare Worker endpoint
             this.API = "https://boat-e-image-gen.danielmat639.workers.dev/image";
+
+            // Memory system
+            this.images = [];   // [{ prompt, image }]
+            this.prompts = [];  // ["prompt1", "prompt2", ...]
         }
 
         getInfo() {
@@ -16,79 +19,110 @@
                 color3: "#1A4F80",
 
                 blocks: [
+                    // (generate image (input))
                     {
-                        opcode: "generatePixelArt",
+                        opcode: "generateImageReporter",
                         blockType: Scratch.BlockType.REPORTER,
-                        text: "generate pixel art [PROMPT]",
-                        arguments: {
-                            PROMPT: {
-                                type: Scratch.ArgumentType.STRING,
-                                defaultValue: "a tiny robot on a boat"
-                            }
-                        }
-                    },
-                    {
-                        opcode: "generatePixelArtCostume",
-                        blockType: Scratch.BlockType.COMMAND,
-                        text: "set sprite costume to pixel art [PROMPT]",
+                        text: "generate image [PROMPT]",
                         arguments: {
                             PROMPT: {
                                 type: Scratch.ArgumentType.STRING,
                                 defaultValue: "pixel robot"
                             }
                         }
+                    },
+
+                    // [generate image (input)]
+                    {
+                        opcode: "generateImageCommand",
+                        blockType: Scratch.BlockType.COMMAND,
+                        text: "generate image [PROMPT]",
+                        arguments: {
+                            PROMPT: {
+                                type: Scratch.ArgumentType.STRING,
+                                defaultValue: "pixel robot"
+                            }
+                        }
+                    },
+
+                    // [use generated image with prompt (input) as costume]
+                    {
+                        opcode: "useImageAsCostume",
+                        blockType: Scratch.BlockType.COMMAND,
+                        text: "use generated image with prompt [PROMPT] as costume",
+                        arguments: {
+                            PROMPT: {
+                                type: Scratch.ArgumentType.STRING,
+                                defaultValue: "pixel robot"
+                            }
+                        }
+                    },
+
+                    // (latest image generation)
+                    {
+                        opcode: "latestImage",
+                        blockType: Scratch.BlockType.REPORTER,
+                        text: "latest image generation"
+                    },
+
+                    // (all image generations)
+                    {
+                        opcode: "allImages",
+                        blockType: Scratch.BlockType.REPORTER,
+                        text: "all image generations"
+                    },
+
+                    // [clear memory]
+                    {
+                        opcode: "clearMemory",
+                        blockType: Scratch.BlockType.COMMAND,
+                        text: "clear memory"
+                    },
+
+                    // (prompt memory)
+                    {
+                        opcode: "promptMemory",
+                        blockType: Scratch.BlockType.REPORTER,
+                        text: "prompt memory"
                     }
                 ]
             };
         }
 
-        /**
-         * Core function: calls your Cloudflare Worker and returns base64 PNG.
-         */
-        async generateImage(prompt) {
-            try {
-                const response = await fetch(this.API, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({ prompt })
-                });
+        // Core generator
+        async generate(prompt) {
+            const response = await fetch(this.API, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ prompt })
+            });
 
-                const data = await response.json();
+            const data = await response.json();
 
-                if (!data.success) {
-                    console.error("[Boat‑E] Worker error:", data.error);
-                    return "";
-                }
+            if (!data.success) return "";
 
-                return data.image; // base64 PNG
-            } catch (err) {
-                console.error("[Boat‑E] Failed to generate image:", err);
-                return "";
-            }
+            // Save to memory
+            this.images.push({ prompt, image: data.image });
+            this.prompts.push(prompt);
+
+            return data.image;
         }
 
-        /**
-         * REPORTER BLOCK
-         * Returns base64 PNG string.
-         */
-        async generatePixelArt(args) {
-            const prompt = args.PROMPT;
-            return await this.generateImage(prompt);
+        // (generate image (input))
+        async generateImageReporter(args) {
+            return await this.generate(args.PROMPT);
         }
 
-        /**
-         * COMMAND BLOCK
-         * Sets the sprite's costume to the generated pixel art.
-         */
-        async generatePixelArtCostume(args, util) {
-            const prompt = args.PROMPT;
-            const base64 = await this.generateImage(prompt);
+        // [generate image (input)]
+        async generateImageCommand(args) {
+            await this.generate(args.PROMPT);
+        }
 
+        // [use generated image with prompt (input) as costume]
+        async useImageAsCostume(args, util) {
+            const base64 = await this.generate(args.PROMPT);
             if (!base64) return;
 
-            // Convert base64 → costume
             const costume = {
                 name: `BoatE_${Date.now()}`,
                 dataFormat: "png",
@@ -112,6 +146,28 @@
             const sprite = util.target.sprite;
             sprite.costumes.push(costume);
             sprite.setCostume(sprite.costumes.length - 1);
+        }
+
+        // (latest image generation)
+        latestImage() {
+            if (this.images.length === 0) return "";
+            return this.images[this.images.length - 1].image;
+        }
+
+        // (all image generations)
+        allImages() {
+            return JSON.stringify(this.images);
+        }
+
+        // [clear memory]
+        clearMemory() {
+            this.images = [];
+            this.prompts = [];
+        }
+
+        // (prompt memory)
+        promptMemory() {
+            return JSON.stringify(this.prompts);
         }
     }
 
